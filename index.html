@@ -165,7 +165,7 @@ function drawScore(){
 function resetCow(){
   cow.x = Math.random() * (FRAME_W - cow.size);
   cow.y = - (Math.random() * 40 + cow.size);
-  cow.speed = (cow.baseSpeed * 0.85) + Math.random() * 0.5;
+  cow.speed = (cow.baseSpeed * 1.1) + Math.random() * 0.7;
 }
 
 function spawnLoop(){
@@ -337,4 +337,5 @@ try { catchSound.load(); missSound.load(); themeMusic.load(); } catch(e){}
 </script>
 </body>
 </html>    
+
 

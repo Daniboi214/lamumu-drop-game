@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lamu Drop game by Dani</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="outer">
+    <div id="frame">
+      <header id="frameHeader">
+        <h1>Lamu Drop game by <a id="daniLink" href="https://x.com/daniiOnchain" target="_blank" rel="noopener">Dani</a></h1>
+      </header>
+
+      <div id="canvasWrap">
+        <canvas id="gameCanvas" width="480" height="640" aria-label="Lamu Drop Game"></canvas>
+
+        <!-- Start overlay (requires click to start music) -->
+        <div id="startOverlay" class="overlay">
+          <div class="panel">
+            <h2>Welcome to Lamu Drop</h2>
+            <p>Catch the cows. Don't miss one!</p>
+            <button id="startBtn" class="primary">Start Game</button>
+            <p class="hint">Use ← → on keyboard, drag or use the buttons on mobile.</p>
+          </div>
+        </div>
+
+        <!-- Game over overlay -->
+        <div id="gameOverOverlay" class="overlay hidden">
+          <div class="panel">
+            <h2>Game Over</h2>
+            <p id="finalScore">Score: 0</p>
+            <p id="bestScore">Best: 0</p>
+            <div class="actions">
+              <button id="playAgainBtn" class="primary">Play Again</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mobile controls -->
+        <div id="mobileControls" class="controls">
+          <button id="leftBtn" class="controlBtn">◀</button>
+          <button id="rightBtn" class="controlBtn">▶</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio -->
+  <audio id="catchSound" src="catch.wav" preload="auto"></audio>
+  <audio id="missSound" src="miss.wav" preload="auto"></audio>
+  <audio id="themeMusic" src="theme.mp3" preload="auto" loop></audio>
+
+<script>
+/* Lamu Drop - final game script
+   - Frame: 480 x 640
+   - Paddle speed set to 10px (per frame movement)
+   - Keyboard, mouse drag, touch drag, mobile buttons
+   - Cow image: cow.png (must exist in same folder)
+   - Audio: theme.mp3 (starts on user start), catch.wav, miss.wav
+   - Game ends immediately when a cow is missed
+   - Falling speed ramps gradually
+*/
+
+// DOM refs
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const startOverlay = document.getElementById('startOverlay');
+const startBtn = document.getElementById('startBtn');
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const finalScoreEl = document.getElementById('finalScore');
+const bestScoreEl = document.getElementById('bestScore');
+const playAgainBtn = document.getElementById('playAgainBtn');
+
+const leftBtn = document.getElementById('leftBtn');
+const rightBtn = document.getElementById('rightBtn');
+
+const catchSound = document.getElementById('catchSound');
+const missSound = document.getElementById('missSound');
+const themeMusic = document.getElementById('themeMusic');
+
+// assets
+const cowImg = new Image();
+cowImg.src = 'cow.png';
+
+// constants
+const FRAME_W = 480;
+const FRAME_H = 640;
+
+canvas.width = FRAME_W;
+canvas.height = FRAME_H;
+
+// paddle (restored smaller size) — paddle speed now = 10
+const paddle = {
+  width: 100,
+  height: 15,
+  x: (FRAME_W - 100) / 2,
+  y: FRAME_H - 48,
+  speed: 10  // <- requested 10px movement
+};
+
+// falling cow
+const cow = {
+  size: 70,
+  x: Math.random() * (FRAME_W - 70),
+  y: -80,
+  baseSpeed: 2.5
+};
+cow.speed = cow.baseSpeed * 0.85; // 15% slower initial
+
+// state
+let score = 0;
+let best = parseInt(localStorage.getItem('lamuBest') || '0', 10);
+let running = false;
+let spawnInterval = null;
+let rafId = null;
+
+// input
+let keys = { left: false, right: false };
+let pointerDx = 0;
+let touchStartX = null;
+let isDragging = false;
+
+// helpers
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+// draw background overlay (canvas sits over CSS background image)
+function drawBackgroundTint(){
+  // subtle overlay so canvas contents contrast with background image
+  const g = ctx.createLinearGradient(0,0,0,FRAME_H);
+  g.addColorStop(0, 'rgba(255,255,255,0.02)');
+  g.addColorStop(1, 'rgba(0,0,0,0.05)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,FRAME_W,FRAME_H);
+}
+
+function drawPaddle(){
+  ctx.fillStyle = '#ff9f1c';
+  ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+}
+
+function drawCow(){
+  // white background square for clarity
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(cow.x, cow.y, cow.size, cow.size);
+
+  if (cowImg.complete && cowImg.naturalWidth !== 0) {
+    // slight decorative wobble removed for natural movement (user requested)
+    ctx.drawImage(cowImg, cow.x, cow.y, cow.size, cow.size);
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(cow.x + 8, cow.y + 8, cow.size - 16, cow.size - 16);
+  }
+}
+
+function drawScore(){
+  ctx.font = '18px Arial';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('Score: ' + score, 12, 26);
+}
+
+// game logic
+function resetCow(){
+  cow.x = Math.random() * (FRAME_W - cow.size);
+  cow.y = - (Math.random() * 40 + cow.size);
+  cow.speed = (cow.baseSpeed * 0.85) + Math.random() * 0.5;
+}
+
+function spawnLoop(){
+  // spawn interval if we later want multiple cows; currently we use single cow
+}
+
+// update loop
+function update(){
+  // inputs -> paddle movement (keyboard)
+  if (keys.left) paddle.x -= paddle.speed;
+  if (keys.right) paddle.x += paddle.speed;
+
+  // pointer button movement (mobile left/right)
+  if (pointerDx) paddle.x += pointerDx;
+
+  // pointer dragging handled elsewhere; clamp
+  paddle.x = clamp(paddle.x, -paddle.width, FRAME_W);
+
+  // cow falls (speed ramps slowly with score)
+  cow.y += cow.speed + score * 0.02;
+
+  // collision check
+  if (cow.y + cow.size >= paddle.y) {
+    const cowLeft = cow.x;
+    const cowRight = cow.x + cow.size;
+    const paddleLeft = paddle.x;
+    const paddleRight = paddle.x + paddle.width;
+
+    if (cowRight > paddleLeft && cowLeft < paddleRight) {
+      // caught
+      score++;
+      try { catchSound.currentTime = 0; catchSound.play(); } catch(e){}
+      cow.baseSpeed += 0.04; // slight ramp to difficulty
+      resetCow();
+    } else if (cow.y > FRAME_H) {
+      // missed -> immediate game over
+      endGame();
+      return;
+    }
+  }
+
+  // safety: if cow somehow far below, end
+  if (cow.y > FRAME_H + 200) {
+    endGame();
+    return;
+  }
+}
+
+function render(){
+  // clear and draw
+  ctx.clearRect(0,0,FRAME_W,FRAME_H);
+  drawBackgroundTint();
+  drawPaddle();
+  drawCow();
+  drawScore();
+}
+
+function loop(){
+  if (!running) return;
+  update();
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+
+// game control
+function startGame(){
+  // hide start overlay and game over
+  startOverlay.style.display = 'none';
+  gameOverOverlay.style.display = 'none';
+
+  // reset state
+  score = 0;
+  paddle.x = (FRAME_W - paddle.width) / 2;
+  cow.baseSpeed = 2.5;
+  resetCow();
+  running = true;
+
+  // play theme (user gesture started it)
+  try { themeMusic.currentTime = 0; themeMusic.volume = 0.45; themeMusic.play(); } catch(e){}
+
+  // begin loop
+  rafId = requestAnimationFrame(loop);
+}
+
+function endGame(){
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+
+  // stop theme and play miss
+  try { themeMusic.pause(); } catch(e){}
+  try { missSound.currentTime = 0; missSound.play(); } catch(e){}
+
+  // save best
+  if (score > best) {
+    best = score;
+    localStorage.setItem('lamuBest', String(best));
+  }
+
+  // show overlay
+  finalScoreEl.textContent = 'Score: ' + score;
+  bestScoreEl.textContent = 'Best: ' + best;
+  gameOverOverlay.style.display = 'flex';
+}
+
+// input bindings
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'Left') keys.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'Right') keys.right = true;
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'Left') keys.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'Right') keys.right = false;
+});
+
+// mobile buttons (pointer)
+leftBtn.addEventListener('pointerdown', () => { pointerDx = -paddle.speed; });
+leftBtn.addEventListener('pointerup', () => { pointerDx = 0; });
+leftBtn.addEventListener('pointerleave', () => { pointerDx = 0; });
+
+rightBtn.addEventListener('pointerdown', () => { pointerDx = paddle.speed; });
+rightBtn.addEventListener('pointerup', () => { pointerDx = 0; });
+rightBtn.addEventListener('pointerleave', () => { pointerDx = 0; });
+
+// touch swipe for short bursts
+canvas.addEventListener('touchstart', (e) => {
+  if (!e.changedTouches || !e.changedTouches[0]) return;
+  touchStartX = e.changedTouches[0].clientX;
+}, { passive: true });
+
+canvas.addEventListener('touchend', (e) => {
+  if (touchStartX === null) return;
+  const touchEndX = e.changedTouches[0].clientX;
+  const diff = touchEndX - touchStartX;
+  const threshold = 30;
+  if (Math.abs(diff) > threshold) paddle.x += diff > 0 ? paddle.speed * 1.2 : -paddle.speed * 1.2;
+  touchStartX = null;
+}, { passive: true });
+
+// pointer drag to directly move paddle (mouse / touch)
+canvas.addEventListener('pointerdown', (e) => {
+  isDragging = true;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  paddle.x = clamp(x - paddle.width/2, -paddle.width, FRAME_W);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!isDragging) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  paddle.x = clamp(x - paddle.width/2, -paddle.width, FRAME_W);
+});
+canvas.addEventListener('pointerup', () => { isDragging = false; });
+canvas.addEventListener('pointercancel', () => { isDragging = false; });
+
+// Start / Play Again
+startBtn.addEventListener('click', startGame);
+playAgainBtn.addEventListener('click', () => {
+  gameOverOverlay.style.display = 'none';
+  startGame();
+});
+
+// show start overlay on load
+startOverlay.style.display = 'flex';
+gameOverOverlay.style.display = 'none';
+
+// preload audio
+try { catchSound.load(); missSound.load(); themeMusic.load(); } catch(e){}
+
+</script>
+</body>
+</html>
